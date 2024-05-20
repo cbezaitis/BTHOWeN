@@ -3,8 +3,16 @@
 *.log
 *.mem
 *.pt
+*.out
+speech_commands_v0.02.tar.gz
 */sv_srcs/*
 __pycache__/
 env/
 software_model/datasets/
 software_model/data/
+data/
+SpeechCommands/
+venv/
+rtl/.Xil
+vivado/working_example/synth_tmp
+rtl/synth_vivado_tmp
