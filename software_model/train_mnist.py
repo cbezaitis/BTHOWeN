@@ -118,6 +118,15 @@ def binarize_datasets(train_dataset, test_dataset, bits_per_input, separate_vali
     # Creates thermometer encoding
     train_inputs = np.concatenate(train_binarizations, axis=1)
 
+    print("one MnistInput")
+    one_input = train_inputs[0]
+    for i in one_input:
+        print(i, end= "")
+    print("sec MnistInput")
+    one_input = train_inputs[1]
+    for i in one_input:
+        print(i, end= "")
+        
     # Ideally, we would perform bleaching using a separate dataset from the training set
     #  (we call this the "validation set", though this is arguably a misnomer),
     #  since much of the point of bleaching is to improve generalization to new data.

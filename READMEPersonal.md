@@ -25,3 +25,9 @@ Just "$PATH" is not working.
 
 ```bash
 ```
+
+
+# Information
+
+Input size of mnist is 4700
+While the Audio is 64000

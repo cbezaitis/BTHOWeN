@@ -39,6 +39,24 @@ class SubsetSC(SPEECHCOMMANDS):
             excludes = load_list("validation_list.txt") + load_list("testing_list.txt")
             excludes = set(excludes)
             self._walker = [w for w in self._walker if w not in excludes]
+    def resample_dataset(self):
+        for file_path in self._walker:
+            try:
+                # Load the audio file
+                waveform, sample_rate = torchaudio.load(file_path)
+
+                # Define the resample transformation
+                resampler = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=1000)
+
+                # Apply the resample transformation
+                resampled_waveform = resampler(waveform)
+
+                # Save the resampled audio to overwrite the original file
+                torchaudio.save(file_path, resampled_waveform, 8000)
+
+                # print(f"Successfully resampled {file_path}")
+            except Exception as e:
+                print(f"Failed to process {file_path}: {str(e)}")
 
 # Perform inference operations using provided test set on provided model with specified bleaching value (default 1)
 def run_inference(inputs, labels, model, bleach=1):
@@ -109,7 +127,7 @@ def parameterized_run(train_inputs, train_labels, val_inputs, val_labels, test_i
 # Use a thermometer encoding with a configurable number of bits per input
 # A thermometer encoding is a binary encoding in which subsequent bits are set as the value increases
 #  e.g. 0000 => 0001 => 0011 => 0111 => 1111
-def binarize_datasets(train_dataset, test_dataset, bits_per_input, separate_validation_dset=None, train_val_split_ratio=0.9):
+def binarize_datasets(train_dataset, test_dataset, bits_per_input, labels, transform):
     # Given a Gaussian with mean=0 and std=1, choose values which divide the distribution into regions of equal probability
     # This will be used to determine thresholds for the thermometer encoding
     std_skews = [norm.ppf((i+1)/(bits_per_input+1))
@@ -125,8 +143,8 @@ def binarize_datasets(train_dataset, test_dataset, bits_per_input, separate_vali
         train_inputs.append(d[0])
         label = np.array(d[1])        
         train_labels.append(label)
-    train_inputs = np.array(train_inputs)
-    train_labels = np.array(train_labels)
+    train_inputs = np.array(train_inputs, dtype=object)
+    train_labels = np.array(train_labels, dtype=object)
     # Step 3: Determine the maximum length of the arrays
     max_length = max(len(arr) for arr in train_inputs)
     # Step 4: Create a 2D NumPy array with the desired shape and padding value
@@ -138,7 +156,14 @@ def binarize_datasets(train_dataset, test_dataset, bits_per_input, separate_vali
     train_inputs = None    
     train_inputs = padded_array
     print("train inputs Fixed")
-    print(train_inputs)
+    # print(train_inputs)
+    print("\n\n\n printing one input of length: " + str(len(train_inputs[0])))
+    i = 0 
+    for input in train_inputs[0]:
+        print(f"{input:.4f}", end="\t\t")
+        i += 1
+        if i%5 == 0:
+            print("\n")
     use_gaussian_encoding = False
     if use_gaussian_encoding:
         mean_inputs = train_inputs.mean(axis=0)
@@ -148,32 +173,52 @@ def binarize_datasets(train_dataset, test_dataset, bits_per_input, separate_vali
             train_binarizations.append(
                 (train_inputs >= mean_inputs+(i*std_inputs)).astype(c.c_ubyte))
     else:
-        min_inputs = train_inputs.min(axis=0)
-        max_inputs = train_inputs.max(axis=0)
-        max_val = np.mean(max_inputs)
-        min_val = np.mean(min_inputs)
-        # max_val = train_inputs.max()
-        # min_val = train_inputs.min()
-        print("max_val is: " + str(max_val) + " min_value is : " + str(min_val))
+        # max_val = np.mean(max_inputs)
+        # min_val = np.mean(min_inputs)
+        max_val = -1
+        min_val = 1
+        print("\n\nmax_val is: " + str(max_val) + " min_value is : " + str(min_val))
         scale = (max_val - min_val) / 255.0
         zero_point = round(-min_val / scale)
         zero_point = max(0, min(255, zero_point))
         print("zero_point is " + str(zero_point) + " scale : " + str(scale))
-        quantized_data = np.round(train_inputs / scale) + zero_point
-        quantized_data = np.clip(quantized_data, 0, 255) 
-        train_inputs = quantized_data
+        train_inputs = np.round(train_inputs / scale) + zero_point
+        train_inputs = np.clip(train_inputs, 0, 255) 
+        min_inputs = train_inputs.min(axis=0)
+        max_inputs = train_inputs.max(axis=0)
+        print("\n \n printing the same input after quantization")
+        i = 0
+        for input in train_inputs[0]:
+            print(input, end="\t\t")
+            i += 1
+            if i%5 == 0:
+                print("\n")
         train_binarizations = []
         for i in range(bits_per_input):
             train_binarizations.append(
                 (train_inputs > min_inputs+(((i+1)/(bits_per_input+1))*(max_inputs-min_inputs))).astype(c.c_ubyte))
 
+    print("printing the same input after binarization")
+    one_input = train_binarizations[0]
+    print(one_input)
+    print("length of binarizated " + str(len(one_input)))
     # Creates thermometer encoding
-    print("train_binarizations")
-    print(train_binarizations)
     train_inputs = np.concatenate(train_binarizations, axis=1)
-    print("train_inputs")
-    print(train_inputs[0])
-  
+    
+    print("printing the same input after concatenate")
+    one_input = train_inputs[0]
+    for i in one_input:
+        print(i, end= "")
+    print(" \n length of binarizated " + str(len(one_input)))
+    
+    sec_input = train_inputs[1]
+    print(sec_input)
+    for i in sec_input:
+        print(i, end= "")
+    print("\n length of binarizated " + str(len(sec_input)))
+    
+    
+    
     print("Binarizing test dataset")
     test_inputs = []
     test_labels = []
@@ -182,8 +227,8 @@ def binarize_datasets(train_dataset, test_dataset, bits_per_input, separate_vali
         test_inputs.append(d[0])
         label = np.array(d[1])        
         test_labels.append(label)
-    test_inputs = np.array(test_inputs)
-    test_labels = np.array(test_labels)
+    test_inputs = np.array(test_inputs, dtype=object)
+    test_labels = np.array(test_labels, dtype=object)
     max_length = max(len(arr) for arr in test_inputs)
     # Step 4: Create a 2D NumPy array with the desired shape and padding value
     # Here, we use 0 as the padding value
@@ -207,15 +252,15 @@ def binarize_datasets(train_dataset, test_dataset, bits_per_input, separate_vali
             test_binarizations.append(
                 (test_inputs > min_inputs+(((i+1)/(bits_per_input+1))*(max_inputs-min_inputs))).astype(c.c_ubyte))
     test_inputs = np.concatenate(test_binarizations, axis=1)
-    print("test_inputs")
-    print(test_inputs[0])
+    
     
     validation_dataset = SubsetSC("validation")
     
     validation_processed_data = []
+    validation_dataset.resample_dataset()
     for i in range(len(validation_dataset)):
         sample = validation_dataset[i]
-        processed_sample = collate_fn(sample)
+        processed_sample = collate_fn(sample, labels)
         validation_processed_data.append(processed_sample)
     
     new_validation_dataset = []
@@ -232,8 +277,8 @@ def binarize_datasets(train_dataset, test_dataset, bits_per_input, separate_vali
         validation_inputs.append(d[0])
         label = np.array(d[1])        
         validation_labels.append(label)
-    validation_inputs = np.array(validation_inputs)
-    validation_labels = np.array(validation_labels)
+    validation_inputs = np.array(validation_inputs, dtype=object)
+    validation_labels = np.array(validation_labels, dtype=object)
     max_length = max(len(arr) for arr in validation_inputs)
     # Step 4: Create a 2D NumPy array with the desired shape and padding value
     # Here, we use 0 as the padding value
@@ -257,15 +302,11 @@ def binarize_datasets(train_dataset, test_dataset, bits_per_input, separate_vali
             validation_binarizations.append(
                 (validation_inputs > min_inputs+(((i+1)/(bits_per_input+1))*(max_inputs-min_inputs))).astype(c.c_ubyte))
     validation_inputs = np.concatenate(validation_binarizations, axis=1)
-    print("validation_inputs")
-    print(validation_inputs[0])
-    print("validation_labels")
-    print(validation_labels[1])
+
 
     return train_inputs, train_labels, validation_inputs, validation_labels, test_inputs, test_labels
 
-train_set = SubsetSC("training")
-labels = sorted(list(set(datapoint[2] for datapoint in train_set)))
+
 
 def pad_sequence(batch):
     # Make all tensor in a batch the same length by padding with zeros
@@ -274,12 +315,12 @@ def pad_sequence(batch):
     
     return batch.permute(0, 2, 1)
 
-def label_to_index(word):
+def label_to_index(word, labels):
     # Return the position of the word in labels
     return torch.tensor(labels.index(word))
 
 
-def collate_fn(batch):
+def collate_fn(batch, labels):
 
     # A data tuple has the form:
     # waveform, sample_rate, label, speaker_id, utterance_number
@@ -290,7 +331,7 @@ def collate_fn(batch):
     waveform, _, label, *_ = batch
     # print(waveform)
     tensors += [waveform]
-    targets += [label_to_index(label)]
+    targets += [label_to_index(label,labels)]
 
     # Group the list of tensors into a batched tensor
     tensors = pad_sequence(tensors)
@@ -301,21 +342,27 @@ def collate_fn(batch):
 def create_models(dset_name, unit_inputs, unit_entries, unit_hashes, bits_per_input, num_workers, save_prefix="model"):
    
     test_set = SubsetSC("testing")
+    train_set = SubsetSC("training")
+    waveform, sample_rate, label, speaker_id, utterance_number = train_set[0]
+    new_sample_rate = 2000
+    transform = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=new_sample_rate)
     labels = sorted(list(set(datapoint[2] for datapoint in train_set)))
-    number_of_labels = len(labels)
     train_processed_data = []
+    train_set.resample_dataset()
+    # labels = sorted(list(set(datapoint[2] for datapoint in train_set)))
     for i in range(len(train_set)):
         sample = train_set[i]
         # print(train_set[i])
-        processed_sample = collate_fn(sample)
+        processed_sample = collate_fn(sample, labels)
         train_processed_data.append(processed_sample)
     
     # Hopefully: waveform, sample_rate, label, speaker_id, utterance_number
-    print(train_set[1])
+    # print(train_set[1])
     test_processed_data = []
+    test_set.resample_dataset()
     for i in range(len(test_set)):
         sample = test_set[i]
-        processed_sample = collate_fn(sample)
+        processed_sample = collate_fn(sample, labels)
         test_processed_data.append(processed_sample)
         
 
@@ -329,7 +376,7 @@ def create_models(dset_name, unit_inputs, unit_entries, unit_hashes, bits_per_in
         new_test_dataset.append((d[0].numpy().flatten(), d[1]))
     test_dataset = new_test_dataset
     
-    datasets = binarize_datasets(train_dataset, test_dataset, bits_per_input)
+    datasets = binarize_datasets(train_dataset, test_dataset, bits_per_input, labels, transform)
     prod = list(itertools.product(unit_inputs, unit_entries, unit_hashes))
     configurations = [datasets + c for c in prod]
 
