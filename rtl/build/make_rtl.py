@@ -36,7 +36,7 @@ global_parameters = {\
     "bits_per_input": model_info["bits_per_input"]\
 }
 
-global_parameters["input_bits"] = 650
+global_parameters["input_bits"] = global_parameters["num_inputs"] * global_parameters["bits_per_input"] 
 global_parameters["filters_per_discriminator"] = global_parameters["input_bits"] // global_parameters["inputs_per_filter"]
 
 if args.hash_units > 0:

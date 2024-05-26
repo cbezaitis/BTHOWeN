@@ -1,5 +1,5 @@
 # step#0: Define output directory location.
-set top_module_name wisard
+set top_module_name device_interface
 set outputDir ./synth_vivado_tmp
 file mkdir $outputDir
 # set_part xc7vx690tffg1761-2
